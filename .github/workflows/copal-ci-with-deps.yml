@@ -1,0 +1,37 @@
+name: Copal CI (with dependencies)
+
+on:
+  workflow_call:
+    inputs:
+      werror_option:
+        description: 'CMake -Werror option name (e.g., COPAL_MEKF_WERROR)'
+        required: true
+        type: string
+
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cxx: g++
+          - os: ubuntu-latest
+            cxx: clang++
+          - os: macos-latest
+            cxx: clang++
+          - os: windows-latest
+            cxx: cl
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -D${{ inputs.werror_option }}=ON
+          ${{ matrix.cxx != 'cl' && format('-DCMAKE_CXX_COMPILER={0}', matrix.cxx) || '' }}
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -C Release
