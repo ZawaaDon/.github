@@ -1,0 +1,57 @@
+name: Copal CI
+
+on:
+  workflow_call:
+    inputs:
+      werror_option:
+        description: 'CMake -Werror option name (e.g., COPAL_ODE_WERROR)'
+        required: true
+        type: string
+
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cxx: g++
+          - os: ubuntu-latest
+            cxx: clang++
+          - os: macos-latest
+            cxx: clang++
+          - os: windows-latest
+            cxx: cl
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -D${{ inputs.werror_option }}=ON
+          ${{ matrix.cxx != 'cl' && format('-DCMAKE_CXX_COMPILER={0}', matrix.cxx) || '' }}
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -C Release
+
+  verify-no-external-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify no external dependencies in library
+        run: |
+          # Library CMakeLists.txt must not use find_package or FetchContent
+          if grep -E 'find_package|FetchContent' CMakeLists.txt; then
+            echo "ERROR: External dependency found in library build"
+            exit 1
+          fi
+          # Library headers must only include standard library or own headers
+          ALLOWED="functional|string|vector|map|memory|unordered_map|cmath|algorithm|numeric|array|cstddef|cstdint|limits|type_traits|utility|cassert|stdexcept|initializer_list|tuple|optional|variant"
+          if grep -rE '#include\s*<' include/ | grep -vE "<($ALLOWED)>"; then
+            echo "ERROR: Non-standard library include found"
+            exit 1
+          fi
+          echo "PASS: No external dependencies"
