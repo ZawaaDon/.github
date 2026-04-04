@@ -52,7 +52,7 @@ jobs:
             echo "Header-only library — skipping clang-tidy"
             exit 0
           fi
-          clang-tidy -p build $SRC_FILES
+          clang-tidy -p build --header-filter='(src|include)/.*' $SRC_FILES
 
   coverage:
     runs-on: ubuntu-latest
