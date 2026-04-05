@@ -7,6 +7,10 @@ on:
         description: 'CMake -Werror option name (e.g., COPAL_ODE_WERROR)'
         required: true
         type: string
+    secrets:
+      COPAL_ACCESS_TOKEN:
+        description: 'PAT for accessing private copal repos (e.g., copal-constants)'
+        required: false
 
 jobs:
   build-and-test:
@@ -25,6 +29,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure git for private repos
+        shell: bash
+        run: |
+          if [ -n "$COPAL_TOKEN" ]; then
+            git config --global url."https://x-access-token:${COPAL_TOKEN}@github.com/".insteadOf "https://github.com/"
+          fi
+        env:
+          COPAL_TOKEN: ${{ secrets.COPAL_ACCESS_TOKEN }}
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -D${{ inputs.werror_option }}=ON
@@ -61,6 +74,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Configure git for private repos
+        run: |
+          if [ -n "$COPAL_TOKEN" ]; then
+            git config --global url."https://x-access-token:${COPAL_TOKEN}@github.com/".insteadOf "https://github.com/"
+          fi
+        env:
+          COPAL_TOKEN: ${{ secrets.COPAL_ACCESS_TOKEN }}
+
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -D${{ inputs.werror_option }}=ON
@@ -78,6 +99,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure git for private repos
+        run: |
+          if [ -n "$COPAL_TOKEN" ]; then
+            git config --global url."https://x-access-token:${COPAL_TOKEN}@github.com/".insteadOf "https://github.com/"
+          fi
+        env:
+          COPAL_TOKEN: ${{ secrets.COPAL_ACCESS_TOKEN }}
 
       - name: Install gcovr
         run: pip install gcovr
