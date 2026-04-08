@@ -1,0 +1,112 @@
+name: Copal Domain CI
+
+on:
+  workflow_call:
+    inputs:
+      werror_option:
+        description: 'CMake -Werror option name (e.g., COPAL_SIM_WERROR)'
+        required: true
+        type: string
+      test_option:
+        description: 'CMake test build option name (e.g., COPAL_SIM_BUILD_TESTS)'
+        required: true
+        type: string
+    secrets:
+      COPAL_ACCESS_TOKEN:
+        description: 'PAT for accessing private copal repos (e.g., copal-sim)'
+        required: false
+
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cxx: g++
+          - os: ubuntu-latest
+            cxx: clang++
+          - os: macos-latest
+            cxx: clang++
+          - os: windows-latest
+            cxx: cl
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure git for private repos
+        shell: bash
+        run: |
+          if [ -n "$COPAL_TOKEN" ]; then
+            git config --global url."https://x-access-token:${COPAL_TOKEN}@github.com/".insteadOf "https://github.com/"
+          fi
+        env:
+          COPAL_TOKEN: ${{ secrets.COPAL_ACCESS_TOKEN }}
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+          -D${{ inputs.werror_option }}=ON -D${{ inputs.test_option }}=ON
+          ${{ matrix.cxx != 'cl' && format('-DCMAKE_CXX_COMPILER={0}', matrix.cxx) || '' }}
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -C Release
+
+  clang-tidy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure git for private repos
+        run: |
+          if [ -n "$COPAL_TOKEN" ]; then
+            git config --global url."https://x-access-token:${COPAL_TOKEN}@github.com/".insteadOf "https://github.com/"
+          fi
+        env:
+          COPAL_TOKEN: ${{ secrets.COPAL_ACCESS_TOKEN }}
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          -D${{ inputs.werror_option }}=ON -D${{ inputs.test_option }}=ON
+
+      - name: Run clang-tidy
+        run: |
+          SRC_FILES=$(find . -path '*/src/*.cpp' -not -path './build/*' 2>/dev/null || true)
+          if [ -z "$SRC_FILES" ]; then
+            echo "No source files found — skipping clang-tidy"
+            exit 0
+          fi
+          clang-tidy -p build --header-filter='(src|include)/.*' $SRC_FILES
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure git for private repos
+        run: |
+          if [ -n "$COPAL_TOKEN" ]; then
+            git config --global url."https://x-access-token:${COPAL_TOKEN}@github.com/".insteadOf "https://github.com/"
+          fi
+        env:
+          COPAL_TOKEN: ${{ secrets.COPAL_ACCESS_TOKEN }}
+
+      - name: Install gcovr
+        run: pip install gcovr
+
+      - name: Configure with coverage
+        run: cmake -B build-cov -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=g++
+          -DCMAKE_CXX_FLAGS=--coverage -DCMAKE_EXE_LINKER_FLAGS=--coverage
+          -D${{ inputs.test_option }}=ON
+
+      - name: Build
+        run: cmake --build build-cov
+
+      - name: Test
+        run: ctest --test-dir build-cov --output-on-failure
+
+      - name: Coverage report
+        run: gcovr build-cov --root . --filter '.*/include/' --filter '.*/src/' --print-summary
